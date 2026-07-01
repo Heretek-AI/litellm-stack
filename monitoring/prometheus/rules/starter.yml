@@ -1,0 +1,34 @@
+groups:
+  - name: starter
+    rules:
+      - alert: ServiceDown
+        expr: up == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Service {{ $labels.job }} is down"
+
+      - alert: EmbedErrorSpike
+        expr: |
+          sum(rate(litellm_requests_failed_total[5m]))
+            /
+          sum(rate(litellm_requests_total[5m])) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Embed error rate >5% for 5min on {{ $labels.job }}"
+
+      - alert: RedisCacheMissRateHigh
+        expr: |
+          1 - (
+            sum(rate(litellm_cache_hits_total[5m]))
+              /
+            sum(rate(litellm_cache_lookups_total[5m]))
+          ) > 0.95
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Cache miss rate >95% — semantic cache may be down"
