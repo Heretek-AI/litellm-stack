@@ -1,8 +1,8 @@
-# Minio Exporter Sidecar — Design
+# Minio Public-Metrics Pivot — Design
 
 **Date:** 2026-07-01
-**Status:** Approved — ready for implementation plan
-**Scope:** Add `quay.io/minio/minio-exporter` sidecar to the existing litellm-stack observability addon to close the only remaining Prometheus scrape gap (minio). Wire prometheus.yml to scrape the sidecar. Drop the broken direct-scrape path.
+**Status:** Approved — pivot from sidecar approach to env-var approach
+**Scope:** Set `MINIO_PROMETHEUS_AUTH_TYPE=public` on the existing minio service so `/minio/v2/metrics/cluster` becomes publicly readable. Drop the broken `basic_auth` direct-scrape and the proposed `quay.io/minio/minio-exporter` sidecar (image doesn't exist on Docker Hub). prometheus.yml scrapes `minio:9000` directly with no auth.
 
 ---
 
@@ -21,56 +21,49 @@
 
 | # | Decision                    | Value                                                          |
 |---|-----------------------------|----------------------------------------------------------------|
-| 1 | Direction                   | minio-exporter sidecar to close 6/7 → 7/7 scrape gap         |
-| 2 | Exporter image              | `quay.io/minio/minio-exporter:latest`                          |
-| 3 | Auth                        | Existing `MINIO_ROOT_USER`/`MINIO_ROOT_PASSWORD` from `.env`   |
-| 4 | Scrape URL                  | `http://minio-exporter:9000/minio/v2/metrics/cluster`         |
-| 5 | Host port mapping           | None (internal-only)                                           |
+| 1 | Direction                   | `MINIO_PROMETHEUS_AUTH_TYPE=public` on existing minio service   |
+| 2 | Exporter image              | None — no new container                                         |
+| 3 | Auth                        | None — `/minio/v2/metrics/cluster` is publicly readable          |
+| 4 | Scrape URL                  | `http://minio:9000/minio/v2/metrics/cluster`                    |
+| 5 | Host port mapping           | None (internal-only)                                            |
 
 ---
 
-## 3. Compose addition
+## 3. Compose change
 
-Add 1 service to existing `docker-compose.yml`, on `litellm-net`:
+Modify the existing `minio` service in `docker-compose.yml` to add a single environment variable `MINIO_PROMETHEUS_AUTH_TYPE=public` to its `environment:` block. Keep existing `MINIO_ROOT_USER` / `MINIO_ROOT_PASSWORD` / `MINIO_VOLUMES` / healthcheck / network / restart unchanged. **No new service. No new container.**
 
 ```yaml
-
-  minio-exporter:
-    image: quay.io/minio/minio-exporter:latest
-    container_name: litellm-minio-exporter
+  minio:
+    image: minio/minio:latest
+    container_name: litellm-minio
     environment:
-      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER}
-      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD}
-      MINIO_ENDPOINT: http://minio:9000
-    healthcheck:
-      test: ["CMD", "/bin/sh", "-c", "wget -qO- http://localhost:9000/minio/v2/metrics/cluster | grep -q minio"]
-      interval: 30s
-      timeout: 5s
-      retries: 5
-    networks:
-      - litellm-net
-    restart: unless-stopped
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      MINIO_PROMETHEUS_AUTH_TYPE: public
+    command: ["minio", "server", "/data", "--address", ":9000", "--console-address", ":9001"]
+    # ...rest unchanged
 ```
 
 Notes:
-- Image is internal-only (no host port mapping).
-- Auths via existing `MINIO_ROOT_USER`/`MINIO_ROOT_PASSWORD` from `.env` — no new secrets.
-- Healthcheck probes its own `/minio/v2/metrics/cluster` to confirm it can reach + authenticate against minio.
+- `MINIO_PROMETHEUS_AUTH_TYPE=public` is a minio-native toggle. The `/minio/v2/metrics/cluster` endpoint becomes publicly readable inside the `litellm-net` Docker network; it is **not** exposed on the host (no host port mapping for 9000).
+- The env var requires a recent minio image (`minio/minio:latest` is sufficient; verified 2026-07-01).
+- Restart the container (`docker compose up -d minio`) so the new env var is picked up — env vars are read at process start.
 
 ---
 
 ## 4. Prometheus scrape config update
 
-Replace the `minio` job in `monitoring/prometheus/prometheus.yml`. Currently scrapes `minio:9000/minio/v2/metrics/cluster` directly with basic_auth (broken — AWS4 required). Replace with:
+Replace the `minio` job in `monitoring/prometheus/prometheus.yml`. Currently scrapes `minio:9000/minio/v2/metrics/cluster` directly with `basic_auth` (broken — AWS4 required). Replace with:
 
 ```yaml
   - job_name: minio
-    static_configs:
-      - targets: ["minio-exporter:9000"]
     metrics_path: /minio/v2/metrics/cluster
+    static_configs:
+      - targets: ["minio:9000"]
 ```
 
-The sidecar handles AWS4 signing internally; prometheus sees plain Prometheus text format.
+Drop the `basic_auth:` block entirely (no auth needed when `MINIO_PROMETHEUS_AUTH_TYPE=public`). Keep `metrics_path` and `targets: ["minio:9000"]`.
 
 ---
 
@@ -109,6 +102,7 @@ docker compose exec alertmanager wget -qO- http://localhost:9093/api/v2/alerts \
 ## 7. Known limitations removed (after this spec)
 
 - `Known limitations` section in `docs/superpowers/specs/2026-07-01-observability-addon-design.md` previously documented the minio AWS4 problem. After this spec lands, that entry becomes stale and should be removed.
+- **Pivot note (2026-07-01):** The originally proposed `quay.io/minio/minio-exporter` sidecar was abandoned — the image does not exist on Docker Hub (verified 2026-07-01, returns 401 on pull). The new approach uses minio's built-in `MINIO_PROMETHEUS_AUTH_TYPE=public` env var to expose metrics without auth. No new container, no new image, no new secrets.
 
 ---
 

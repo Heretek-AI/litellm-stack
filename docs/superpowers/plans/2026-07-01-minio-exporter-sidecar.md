@@ -1,14 +1,16 @@
-# Minio Exporter Sidecar Implementation Plan
+# Minio Public-Metrics Pivot Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Add a `quay.io/minio/minio-exporter` sidecar so the minio Prometheus scrape target comes UP. Stack goes from 6/7 → 7/7 targets. The existing `ServiceDown` alert on `job=minio` clears within ~2m of the target coming UP.
+**Goal:** Set `MINIO_PROMETHEUS_AUTH_TYPE=public` on the existing minio service so the minio Prometheus scrape target comes UP. Stack goes from 6/7 → 7/7 targets. The existing `ServiceDown` alert on `job=minio` clears within ~2m of the target coming UP. No new container, no new image, no new secrets.
 
-**Architecture:** Compose service `minio-exporter` on `litellm-net` that authenticates to minio with AWS4-HMAC-SHA256 (signing the `/minio/v2/metrics/cluster` request internally) and exposes the same metrics path as Prometheus text format on port 9000. Replace the broken direct-scrape (`basic_auth` against `minio:9000`) with `targets: ["minio-exporter:9000"]` + same `metrics_path`. Update the observability spec to drop the now-stale minio AWS4 entry from the Known Limitations section.
+**Architecture:** Add one env var (`MINIO_PROMETHEUS_AUTH_TYPE=public`) to the existing `minio` service in `docker-compose.yml`. minio's `/minio/v2/metrics/cluster` endpoint becomes publicly readable inside the `litellm-net` Docker network. Replace the broken direct-scrape (`basic_auth` against `minio:9000`) with the same target `minio:9000` and no auth block. Update the observability spec to drop the now-stale minio AWS4 entry from the Known Limitations section.
 
-**Tech Stack:** Docker Compose v2, `quay.io/minio/minio-exporter:latest`, Prometheus, Alertmanager. Bash smoke tests via `wget` inside the prometheus + alertmanager containers.
+**Tech Stack:** Docker Compose v2, minio-native `MINIO_PROMETHEUS_AUTH_TYPE=public` env var, Prometheus, Alertmanager. Bash smoke tests via `wget` inside the prometheus + alertmanager containers.
 
 **Spec:** `docs/superpowers/specs/2026-07-01-minio-exporter-sidecar-design.md`
+
+**Pivot context (2026-07-01):** The originally proposed `quay.io/minio/minio-exporter` sidecar was abandoned — that image does not exist on Docker Hub (verified 2026-07-01, returns 401 on pull). The simpler env-var approach achieves the same 7/7 outcome.
 
 ---
 
@@ -29,13 +31,13 @@
 
 | Path | Purpose |
 |---|---|
-| `docker-compose.yml` (modified) | Add `minio-exporter` service block (inside `services:`) |
-| `monitoring/prometheus/prometheus.yml` (modified) | Replace `minio` job with sidecar target |
+| `docker-compose.yml` (modified) | Add `MINIO_PROMETHEUS_AUTH_TYPE=public` to `minio` service `environment:` |
+| `monitoring/prometheus/prometheus.yml` (modified) | Drop `basic_auth:` from `minio` job (keep target `minio:9000`) |
 | `docs/superpowers/specs/2026-07-01-observability-addon-design.md` (modified) | Remove stale minio AWS4 entry from Known Limitations |
 
 ---
 
-## Task 1: Add minio-exporter service + replace prometheus scrape job
+## Task 1: Add `MINIO_PROMETHEUS_AUTH_TYPE=public` to minio + drop `basic_auth` from prometheus
 
 **Files:**
 - Modify: `docker-compose.yml`
@@ -43,32 +45,22 @@
 
 **Depends on:** Existing compose services (minio running with `MINIO_ROOT_USER`/`MINIO_ROOT_PASSWORD` from `.env`); existing 7 scrape jobs in prometheus.yml.
 
-- [ ] **Step 1: Read current `docker-compose.yml` to confirm service block layout**
+- [ ] **Step 1: Read current `docker-compose.yml` to confirm the `minio` service block layout**
 
-Read the file. Find the spot just BEFORE the final `networks:` block to insert the new service.
+Read the file. Find the existing `minio:` service and its `environment:` block.
 
-- [ ] **Step 2: Append `minio-exporter` service to `docker-compose.yml`**
+- [ ] **Step 2: Add `MINIO_PROMETHEUS_AUTH_TYPE: public` to the `minio` service `environment:` block**
 
-Insert this block just before the final `networks:` block:
+Edit the existing `environment:` block under `minio:` to add one line:
 
 ```yaml
-
-  minio-exporter:
-    image: quay.io/minio/minio-exporter:latest
-    container_name: litellm-minio-exporter
     environment:
-      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER}
-      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD}
-      MINIO_ENDPOINT: http://minio:9000
-    healthcheck:
-      test: ["CMD", "/bin/sh", "-c", "wget -qO- http://localhost:9000/minio/v2/metrics/cluster | grep -q minio"]
-      interval: 30s
-      timeout: 5s
-      retries: 5
-    networks:
-      - litellm-net
-    restart: unless-stopped
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      MINIO_PROMETHEUS_AUTH_TYPE: public
 ```
+
+Keep everything else (image, container_name, command, volumes, healthcheck, networks, restart) untouched. Do NOT add a new service block.
 
 - [ ] **Step 3: Validate compose**
 
@@ -76,12 +68,12 @@ Insert this block just before the final `networks:` block:
 docker compose config --quiet && echo "compose OK"
 ```
 
-Expected: `compose OK`. Confirm the new service parses by counting services:
+Expected: `compose OK`. Confirm service count unchanged:
 ```bash
 docker compose config --services | wc -l
 ```
 
-Expected: `12` (was 11).
+Expected: `11` (no new service added).
 
 - [ ] **Step 4: Read current `monitoring/prometheus/prometheus.yml` and find the `minio` job block**
 
@@ -96,14 +88,14 @@ The current `minio` job looks like:
       - targets: ["minio:9000"]
 ```
 
-- [ ] **Step 5: Replace the `minio` job block with the sidecar target**
+- [ ] **Step 5: Drop `basic_auth:` from the `minio` job (keep target `minio:9000`)**
 
 Replace it with:
 ```yaml
   - job_name: minio
     metrics_path: /minio/v2/metrics/cluster
     static_configs:
-      - targets: ["minio-exporter:9000"]
+      - targets: ["minio:9000"]
 ```
 
 - [ ] **Step 6: Validate the prometheus YAML**
@@ -114,29 +106,28 @@ python3.12 -c "import yaml; yaml.safe_load(open('monitoring/prometheus/prometheu
 
 Expected: `OK`.
 
-- [ ] **Step 7: Bring up the new service + restart prometheus (use `up -d`, not `restart`)**
+- [ ] **Step 7: Bring up minio + prometheus (use `up -d`, not `restart`)**
 
 ```bash
-docker compose up -d minio-exporter
-docker compose up -d prometheus
+docker compose up -d minio prometheus
 ```
 
-`up -d` (not `restart`) so prometheus picks up the new scrape target even though its config didn't change.
+`up -d` (not `restart`) so minio picks up the new env var (env vars are read at process start) and prometheus picks up the new scrape config.
 
-- [ ] **Step 8: Wait ~30s for minio-exporter to come up + for prometheus to start scraping it**
+- [ ] **Step 8: Wait ~30s for minio to come up + for prometheus to start scraping it**
 
 ```bash
 sleep 30
-docker compose ps minio-exporter
+docker compose ps minio prometheus
 ```
 
-Expected: `litellm-minio-exporter Up 30 seconds (healthy)`. If healthcheck is failing, capture logs:
+Expected: both `Up ... (healthy)`. If minio healthcheck fails, capture logs:
 ```bash
-docker compose logs minio-exporter --tail 50
+docker compose logs minio --tail 50
 ```
 And report BLOCKED with the log excerpt.
 
-- [ ] **Step 9: Verify minio target now scrapes via the sidecar**
+- [ ] **Step 9: Verify minio target now scrapes successfully**
 
 ```bash
 docker compose exec litellm-prometheus wget -qO- http://localhost:9090/api/v1/targets \
@@ -148,24 +139,18 @@ Expected: a line `minio = up` (was `minio = down` before). All 7 targets should 
 - [ ] **Step 10: Verify the scrape body actually contains minio metrics**
 
 ```bash
-docker compose exec litellm-prometheus wget -qO- http://minio-exporter:9000/minio/v2/metrics/cluster | head -10
+docker compose exec litellm-prometheus wget -qO- http://minio:9000/minio/v2/metrics/cluster | head -5
 ```
 
-Expected: prometheus text format starting with `# HELP` and `# TYPE` lines for `minio_*` metrics (e.g., `minio_node_disk_used_bytes`, `minio_node_disk_free_bytes`).
+Expected: prometheus text format starting with `# HELP` and `# TYPE` lines for `minio_*` metrics.
 
 - [ ] **Step 11: Commit both file changes**
 
 ```bash
 git add docker-compose.yml monitoring/prometheus/prometheus.yml
-git commit -m "feat: add minio-exporter sidecar to close 6/7 -> 7/7 scrape gap
+git commit -m "fix(observability): drop minio-exporter sidecar, use MINIO_PROMETHEUS_AUTH_TYPE=public instead
 
-Adds quay.io/minio/minio-exporter as a sidecar that signs AWS4-HMAC-SHA256
-on behalf of Prometheus. The minio /minio/v2/metrics/cluster endpoint
-requires AWS4 signing that basic_auth cannot provide; the sidecar handles
-signing internally and exposes the same metrics as plain Prometheus text.
-
-Replaces the broken direct-scrape job (basic_auth against minio:9000) with
-a target of minio-exporter:9000."
+The quay.io/minio/minio-exporter image does not exist on Docker Hub (verified 2026-07-01). Pivot to a simpler fix: set MINIO_PROMETHEUS_AUTH_TYPE=public on the existing minio service. /minio/v2/metrics/cluster becomes publicly readable; the prometheus minio job scrapes minio:9000 directly with no auth. Closes the 6/7 -> 7/7 scrape gap with no new container."
 ```
 
 Expected: 2 files changed.
@@ -291,12 +276,12 @@ Expected: `master -> master` (or similar). 3 commits ahead of origin.
 ## Self-Review (post-write)
 
 1. **Spec coverage:**
-   - §3 Compose addition — Task 1 Step 2.
-   - §4 Prometheus scrape config — Task 1 Steps 4-5.
+   - §3 Compose change — Task 1 Step 2 (env var on existing `minio` service).
+   - §4 Prometheus scrape config — Task 1 Steps 4-5 (drop `basic_auth`, keep target `minio:9000`).
    - §5 Failure handling — Task 3 Step 4 (re-fire defensive check).
    - §6 Smoke test — Task 1 Steps 8-10 + Task 3 Step 1.
    - §7 Known limitations removed — Task 2.
    - §8 Out of scope — excluded.
 2. **Placeholders:** none. Every command, env var, service name, target, and path is explicit.
-3. **Type / key consistency:** `minio-exporter` service name + container name + prometheus scrape target all consistent. `MINIO_ACCESS_KEY` / `MINIO_SECRET_KEY` / `MINIO_ENDPOINT` env vars are the official minio-exporter contract (matches upstream image docs). `metrics_path: /minio/v2/metrics/cluster` consistent in spec §4, Task 1 Step 5, and Task 3 Step 4.
-4. **Task right-sizing:** Task 1 is the substantive code change (compose + prometheus + bring-up). Task 2 is a 3-line doc fix. Task 3 is verification. Each ends in commit or status check.
+3. **Type / key consistency:** `MINIO_PROMETHEUS_AUTH_TYPE=public` is the only env change. `metrics_path: /minio/v2/metrics/cluster` consistent in spec §4, Task 1 Step 5, and Task 3 Step 4. Scraped target is unchanged (`minio:9000`) — same as before the pivot, just without `basic_auth`.
+4. **Task right-sizing:** Task 1 is the substantive code change (compose env var + prometheus drop auth + bring-up). Task 2 is a 3-line doc fix. Task 3 is verification. Each ends in commit or status check.
