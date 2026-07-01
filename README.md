@@ -34,7 +34,12 @@ curl -s -X POST http://127.0.0.1:4000/v1/embeddings \
   -d '{"model":"harrier-oss-v1-0.6b","input":"hello world"}' | jq .
 
 # 3. Embed again — verify Redis Semantic cache hit
-docker compose logs litellm --tail 50 | grep -i 'cache hit\|semantic'
+# NOTE: As of 2026-06-30, the Redis Semantic cache's read-side semantic lookup
+# is NOT triggered for /v1/embeddings (LiteLLM upstream limitation; the proxy
+# route's hash-key lookup short-circuits before the semantic branch runs).
+# Write side works — vectors are stored under litellm_semantic_cache: in Redis.
+# /v1/chat/completions is unaffected. Verify write side only:
+docker compose exec redis redis-cli KEYS 'litellm_semantic_cache:*' | head
 
 # 4. UI login
 open http://127.0.0.1:4000/ui   # master_key as password

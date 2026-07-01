@@ -182,6 +182,7 @@ OPENAI_API_BASE=http://host.docker.internal:13305/v1
 | Lemonade `/embeddings` 5xx       | Embed call fails → cache lookup degrades to miss; upstream call may also fail.    |
 | Lemonade unreachable             | First embed call surfaces the error; UI shows proxy unhealthy until restored.     |
 | Master key missing from env      | LiteLLM refuses to start (built-in check). Loud failure, no silent default key.   |
+| Milvus `/health` returns 404     | Expected — Milvus v2.4 serves gRPC on 19530; HTTP frontend returns 404 for `/health`-style paths. Verify via TCP probe (`socket.create_connection(('milvus',19530),5)`) and `[GIN]` log entries showing requests from the litellm container IP. |
 
 Cache failures are non-fatal by LiteLLM default. Milvus failures are surfaced to the caller because the operation cannot silently degrade. UI health status reflects redis + lemonade reachability.
 
