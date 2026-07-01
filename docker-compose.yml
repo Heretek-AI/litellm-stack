@@ -80,13 +80,16 @@ services:
     container_name: litellm-proxy
     env_file:
       - .env
-    command: ["litellm", "--config", "/app/config/config.yaml", "--port", "4000", "--detailed_debug"]
+    command: ["--config", "/app/config/config.yaml", "--port", "4000", "--detailed_debug"]
     volumes:
-      - ./config:/app/config:ro
+      - ./config:/app/config:ro,z
     ports:
       - "127.0.0.1:4000:4000"
     extra_hosts:
-      - "host.docker.internal:host-gateway"
+      # lemonade server lives on a separate LAN host (not this Fedora host).
+      # Map host.docker.internal directly to the lemonade IP so the proxy
+      # container reaches it without going through this host.
+      - "host.docker.internal:192.168.31.246"
     depends_on:
       redis:
         condition: service_healthy
