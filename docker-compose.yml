@@ -138,7 +138,7 @@ services:
     volumes:
       - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro,z
       - ./monitoring/prometheus/rules:/etc/prometheus/rules:ro,z
-      - ./monitoring/secrets/litellm_metrics_token:/run/secrets/litellm_metrics_token:ro,z
+      - ./monitoring/secrets/litellm_master_key:/run/secrets/litellm_master_key:ro,z
       - ./monitoring/secrets/minio_metrics_user:/run/secrets/minio_metrics_user:ro,z
       - ./monitoring/secrets/minio_metrics_pass:/run/secrets/minio_metrics_pass:ro,z
       - prometheus_data:/prometheus
