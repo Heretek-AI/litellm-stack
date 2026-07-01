@@ -58,6 +58,8 @@
 **Depends_on**
 - `grafana` waits on `prometheus` healthy (so datasource provisioning succeeds).
 
+**Grafana env isolation.** The `grafana` service deliberately does **not** declare `env_file: .env`. The shared `.env` contains `DATABASE_URL=postgresql://llmproxy:dbpassword9090@db:5432/litellm` (intended for the `litellm` service); if that var leaks into the Grafana container, the Grafana image switches its auth backend from internal sqlite to external Postgres, which silently breaks the `GF_SECURITY_ADMIN_PASSWORD__FILE` flow (the seeded admin user no longer matches the file-sourced password, so Grafana falls back to default `admin/admin`). The grafana service uses only its explicit `environment:` block (`GF_SECURITY_ADMIN_USER`, `GF_SECURITY_ADMIN_PASSWORD__FILE`, `GF_AUTH_ANONYMOUS_ENABLED`, `GF_SERVER_HTTP_PORT`) plus the `monitoring/secrets/grafana_admin_password` mount. Other services (litellm, prometheus exporters via secret files, etc.) retain their normal env handling.
+
 ---
 
 ## 4. Prometheus scrape config

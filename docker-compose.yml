@@ -166,8 +166,13 @@ services:
   grafana:
     image: grafana/grafana:latest
     container_name: litellm-grafana
-    env_file:
-      - .env
+    # NOTE: Grafana does NOT inherit env_file: .env — that would leak
+    # DATABASE_URL (intended for the litellm service) into the Grafana
+    # container, causing the image to switch its auth backend from
+    # internal sqlite to external Postgres. Once that switch happens,
+    # GF_SECURITY_ADMIN_PASSWORD__FILE no longer matches the seeded
+    # admin user and Grafana silently falls back to default admin/admin.
+    # The explicit environment: block below is the sole env source.
     environment:
       GF_SECURITY_ADMIN_USER: admin
       GF_SECURITY_ADMIN_PASSWORD__FILE: /run/secrets/grafana_admin_password
