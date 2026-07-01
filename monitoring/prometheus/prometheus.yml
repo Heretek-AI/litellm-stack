@@ -13,6 +13,7 @@ alerting:
 scrape_configs:
   - job_name: litellm
     metrics_path: /metrics
+    bearer_token_file: /run/secrets/litellm_metrics_token
     static_configs:
       - targets: ["litellm:4000"]
 
@@ -31,6 +32,9 @@ scrape_configs:
 
   - job_name: minio
     metrics_path: /minio/v2/metrics/cluster
+    basic_auth:
+      username_file: /run/secrets/minio_metrics_user
+      password_file: /run/secrets/minio_metrics_pass
     static_configs:
       - targets: ["minio:9000"]
 
