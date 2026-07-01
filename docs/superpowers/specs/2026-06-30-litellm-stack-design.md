@@ -124,6 +124,8 @@ general_settings:
 
 **Note on prior Redis failure.** The `embedding_model` + `api_base` block under `cache_params` is the most commonly missed piece. Without it, Redis Semantic cannot compute query vectors and silently disables caching. With it pointing at lemonade via `host.docker.internal`, cache will hit.
 
+**Known upstream limitation (verified 2026-07-01):** The Redis Semantic cache **write side works** for `/v1/embeddings` (vectors stored under `litellm_semantic_cache:` index), but the **read-side semantic lookup is not triggered** through the LiteLLM proxy embedding route. Hash-key lookup short-circuits with `Cache_hit=None`, so paraphrased input never reaches the `RedisSemanticCache.get_cache` semantic branch. Confirmed by dropping `similarity_threshold` to `0.5` and using a near-identical input pair (cosine ≫ 0.5) — still no HIT. Workarounds: (a) use `/v1/chat/completions` for cache verification — semantic cache is known to work for that route; (b) file an issue against `BerriAI/litellm` documenting the embedding-route bypass. This does not affect Milvus RAG vector stores or completion routes.
+
 **Note on LiteLLM config-schema gotchas** (validated against the working stack, not just the docs):
 - Embedding model lives in `model_list:` — `embedding_models:` is not a top-level key in current LiteLLM. The model entry in `model_list` doubles as the embed source for `redis_semantic_cache_embedding_model` and Milvus.
 - `cache_params.embedding_model` collides with `Cache(**cache_params)`'s leading `embedding_model` kwarg, producing `TypeError: got multiple values for keyword argument 'embedding_model'`. Use `cache_params.redis_semantic_cache_embedding_model` (upstream-supported key).
