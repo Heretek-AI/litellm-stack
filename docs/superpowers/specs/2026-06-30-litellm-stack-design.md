@@ -87,7 +87,11 @@ model_list:
   - model_name: harrier-oss-v1-0.6b
     litellm_params:
       model: openai/harrier-oss-v1-0.6b
-      api_base: http://${LEMONADE_HOST_IP:-host.docker.internal}:13305/v1
+      # Hostname literal; compose's `extra_hosts` maps `host.docker.internal`
+      # to LEMONADE_HOST_IP at container startup. LiteLLM's config loader
+      # supports os.environ/FOO substitution but not shell-style ${VAR:-default}
+      # interpolation, so the URL stays literal here.
+      api_base: http://host.docker.internal:13305/v1
       api_key: dummy-not-used
 
 # Redis Semantic cache — uses the embed model above to compare query vectors.
@@ -96,7 +100,7 @@ litellm_settings:
   # Cache embedding probe runs during config load (before router is built),
   # so provide litellm-level api_base/api_key rather than relying on router
   # resolution. Model is fully provider-prefixed.
-  api_base: http://${LEMONADE_HOST_IP:-host.docker.internal}:13305/v1
+  api_base: http://host.docker.internal:13305/v1
   api_key: dummy-not-used
   cache_params:
     type: redis-semantic
@@ -113,7 +117,7 @@ vector_stores:
     uri: http://milvus:19530
     collection_name: litellm_rag
     embedding_model: openai/harrier-oss-v1-0.6b
-    api_base: http://${LEMONADE_HOST_IP:-host.docker.internal}:13305/v1
+    api_base: http://host.docker.internal:13305/v1
     api_key: dummy-not-used
 
 # Proxy + UI
