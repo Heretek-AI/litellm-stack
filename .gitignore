@@ -3,6 +3,7 @@
 
 # runtime
 data/
+!data/.gitkeep
 *.log
 docker-compose.override.yml
 
