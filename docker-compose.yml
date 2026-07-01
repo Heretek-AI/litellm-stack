@@ -172,18 +172,21 @@ services:
       GF_SECURITY_ADMIN_USER: admin
       GF_SECURITY_ADMIN_PASSWORD__FILE: /run/secrets/grafana_admin_password
       GF_AUTH_ANONYMOUS_ENABLED: "false"
+      # Bind Grafana's internal HTTP listener to 3030 so the published
+      # host:3030 -> container:3030 mapping actually reaches the server.
+      GF_SERVER_HTTP_PORT: "3030"
     volumes:
       - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro,z
       - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro,z
       - ./monitoring/secrets/grafana_admin_password:/run/secrets/grafana_admin_password:ro,z
       - grafana_data:/var/lib/grafana
     ports:
-      - "127.0.0.1:3000:3000"
+      - "127.0.0.1:3030:3030"
     depends_on:
       prometheus:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/api/health | grep -q ok"]
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3030/api/health | grep -q ok"]
       interval: 30s
       timeout: 5s
       retries: 5

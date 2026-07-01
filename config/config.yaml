@@ -14,6 +14,10 @@ model_list:
 # Redis Semantic cache — uses the embed model above to compare query vectors.
 litellm_settings:
   cache: true
+  # Expose Prometheus exposition on /metrics so Prometheus can scrape.
+  # `success_callback: ["prometheus"]` registers the prometheus callback
+  # which enables the /metrics endpoint AND emits per-request counters.
+  success_callback: ["prometheus"]
   # Cache embedding probe runs during config load (before router is built),
   # so provide litellm-level api_base/api_key rather than relying on router
   # resolution. Model is fully provider-prefixed.

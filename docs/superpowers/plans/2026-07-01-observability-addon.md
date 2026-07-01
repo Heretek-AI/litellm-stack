@@ -22,7 +22,7 @@
 - JSON files MUST validate via `python3 -c "import json; json.load(open('PATH'))"`.
 - The `monitoring/` directory tree is committed (not gitignored).
 - Grafana admin password is generated via `openssl rand -hex 16`, stored in `.env` (gitignored) and in `monitoring/secrets/grafana_admin_password` (gitignored). `.env.example` ships a placeholder.
-- Loopback bind only: Grafana on `127.0.0.1:3000`. Prometheus + Alertmanager are internal-only.
+- Loopback bind only: Grafana on `127.0.0.1:3030`. Prometheus + Alertmanager are internal-only.
 
 ---
 
@@ -459,12 +459,12 @@ Read the current file. Append before the final `networks:` block:
       - ./monitoring/secrets/grafana_admin_password:/run/secrets/grafana_admin_password:ro,z
       - grafana_data:/var/lib/grafana
     ports:
-      - "127.0.0.1:3000:3000"
+      - "127.0.0.1:3030:3030"
     depends_on:
       prometheus:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/api/health | grep -q ok"]
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3030/api/health | grep -q ok"]
       interval: 30s
       timeout: 5s
       retries: 5
@@ -656,7 +656,7 @@ Expected: HTTP 200 with empty body, container `Up`.
 - [ ] **Step 1: Grafana health**
 
 ```bash
-curl -sf http://127.0.0.1:3000/api/health
+curl -sf http://127.0.0.1:3030/api/health
 ```
 
 Expected: status 200 with body indicating database ok.
@@ -665,7 +665,7 @@ Expected: status 200 with body indicating database ok.
 
 ```bash
 GPASS=$(cat monitoring/secrets/grafana_admin_password)
-curl -sf -u "admin:$GPASS" http://127.0.0.1:3000/api/datasources \
+curl -sf -u "admin:$GPASS" http://127.0.0.1:3030/api/datasources \
   | python3 -c "import sys,json; d=json.load(sys.stdin); [print(p['name'], '->', p['url'], '(default)' if p.get('isDefault') else '') for p in d]"
 ```
 
@@ -674,7 +674,7 @@ Expected: 1 line: `Prometheus -> http://prometheus:9090 (default)`.
 - [ ] **Step 3: Verify 3 dashboards provisioned**
 
 ```bash
-curl -sf -u "admin:$GPASS" http://127.0.0.1:3000/api/search \
+curl -sf -u "admin:$GPASS" http://127.0.0.1:3030/api/search \
   | python3 -c "import sys,json; d=json.load(sys.stdin); [print(p['title'], 'uid=' + p['uid']) for p in d]"
 ```
 
@@ -683,7 +683,7 @@ Expected: 3 dashboards listed.
 - [ ] **Step 4: Verify dashboard JSON round-trips through Grafana**
 
 ```bash
-curl -sf -u "admin:$GPASS" http://127.0.0.1:3000/api/dashboards/uid/litellm-unified \
+curl -sf -u "admin:$GPASS" http://127.0.0.1:3030/api/dashboards/uid/litellm-unified \
   | python3 -c "import sys,json; d=json.load(sys.stdin); print('panels:', len(d['dashboard']['panels']))"
 ```
 

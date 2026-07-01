@@ -30,7 +30,7 @@
 | 2 | Dashboards             | 3: Unified overview + litellm deep-dive + cache/vector store           |
 | 3 | Retention              | 30 days                                                                |
 | 4 | Grafana auth           | Random password via `${GRAFANA_ADMIN_PASSWORD}` in .env (gitignored)   |
-| 5 | Grafana port           | `127.0.0.1:3000` (loopback only)                                       |
+| 5 | Grafana port           | `127.0.0.1:3030` (loopback only)                                       |
 | 6 | Alerting               | Alertmanager + 3 starter rules, stdout sink only                       |
 | 7 | Network                | Single shared `litellm-net` (no separate `monitoring-net`)            |
 | 8 | Approach               | A — Compose sidecars on `litellm-net`                                  |
@@ -45,7 +45,7 @@
 |----------------------|--------------------------------------------------------|------------------------------------------|--------------------|
 | prometheus           | `prom/prometheus:latest`                                | Metrics scrape + storage (30d retention)  | (internal)         |
 | alertmanager         | `prom/alertmanager:latest`                              | Alert routing (stdout sink)              | (internal)         |
-| grafana              | `grafana/grafana:latest`                                | Dashboards (3 auto-provisioned)          | `127.0.0.1:3000`   |
+| grafana              | `grafana/grafana:latest`                                | Dashboards (3 auto-provisioned)          | `127.0.0.1:3030`   |
 | redis-exporter       | `oliver006/redis_exporter:latest`                       | Redis metrics sidecar                    | (internal)         |
 | postgres-exporter    | `prometheuscommunity/postgres-exporter:latest`          | Postgres metrics sidecar                 | (internal)         |
 
@@ -231,11 +231,11 @@ done
 curl -sf 'http://127.0.0.1:9090/api/v1/query?query=up' | python3 -m json.tool
 
 # 4. Grafana health + datasource live
-curl -sf http://127.0.0.1:3000/api/health
-curl -sf -u admin:$GRAFANA_ADMIN_PASSWORD http://127.0.0.1:3000/api/datasources | python3 -m json.tool
+curl -sf http://127.0.0.1:3030/api/health
+curl -sf -u admin:$GRAFANA_ADMIN_PASSWORD http://127.0.0.1:3030/api/datasources | python3 -m json.tool
 
 # 5. Dashboards provisioned (3 expected)
-curl -sf -u admin:$GRAFANA_ADMIN_PASSWORD http://127.0.0.1:3000/api/search | python3 -m json.tool
+curl -sf -u admin:$GRAFANA_ADMIN_PASSWORD http://127.0.0.1:3030/api/search | python3 -m json.tool
 
 # 6. Alerts load
 curl -sf http://127.0.0.1:9090/api/v1/rules | python3 -c "import sys,json; print(len(json.load(sys.stdin)['data']['groups'][0]['rules']), 'rules loaded')"
@@ -258,3 +258,40 @@ docker compose start redis
 - Auto-remediation of alerts.
 - Dashboard editing/export tooling (use Grafana UI directly).
 - Long-term storage (Thanos / Mimir).
+
+---
+
+## Known limitations
+
+### MinIO scrape requires AWS Signature v4 — basic auth does not work
+
+The MinIO cluster metrics endpoint (`/minio/v2/metrics/cluster`) does **not**
+accept HTTP basic auth. MinIO's API requires AWS4-HMAC-SHA256 signature
+authentication, which Prometheus's `basic_auth` scrape config does not produce.
+As a result, the `minio` scrape job returns HTTP 400 (Invalid Request) on every
+scrape and `up{job="minio"}` stays at 0 — even though the target itself is
+reachable.
+
+**Current state.** With `telemetry: True` enabled on litellm, all other targets
+come up cleanly and Prometheus reports **6/7 targets UP** (litellm, redis,
+milvus, postgres, etcd, prometheus). The `minio` job is left in the scrape
+config but is not expected to come UP until one of the resolutions below is
+implemented in a follow-on spec.
+
+**Two viable resolutions (for a follow-on spec):**
+
+1. **Sidecar minio-exporter.** Add a `minio/mc`-driven sidecar (e.g. the
+   community `minio-exporter` image, or a small custom container that wraps
+   `mc admin prometheus generate`) which signs AWS4 requests and exposes a
+   plain Prometheus endpoint on its own port. Repoint the `minio` scrape job
+   at the sidecar. Requires keeping `mc` credentials in
+   `monitoring/secrets/minio_metrics_user` / `..._pass` and rotating them
+   when MinIO creds change.
+2. **Drop MinIO from the Prometheus scrape jobs.** Remove the `minio` job
+   from `monitoring/prometheus/prometheus.yml` entirely. Acceptable because
+   Milvus is the primary S3-backed service in this stack and has its own
+   `/metrics` endpoint — direct MinIO visibility is not load-bearing for the
+   three provisioned dashboards or the three starter alerts.
+
+Resolution choice is deferred to a follow-on spec; this design ships with
+6/7 targets UP and the MinIO job documented here as a known gap.
