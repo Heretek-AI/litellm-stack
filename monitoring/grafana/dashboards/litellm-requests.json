@@ -1,0 +1,15 @@
+{
+  "title": "litellm-stack / LiteLLM Requests",
+  "uid": "litellm-requests",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "15s",
+  "time": {"from": "now-1h", "to": "now"},
+  "panels": [
+    {"id":1,"type":"timeseries","title":"Request rate (req/s)","datasource":{"type":"prometheus","uid":"prometheus"},"gridPos":{"x":0,"y":0,"w":12,"h":8},"targets":[{"expr":"sum(rate(litellm_requests_total[1m]))","refId":"A","legendFormat":"all"}]},
+    {"id":2,"type":"timeseries","title":"Request rate by model","datasource":{"type":"prometheus","uid":"prometheus"},"gridPos":{"x":12,"y":0,"w":12,"h":8},"targets":[{"expr":"sum by (model) (rate(litellm_requests_total[1m]))","refId":"A","legendFormat":"{{model}}"}]},
+    {"id":3,"type":"timeseries","title":"Error rate (req/s)","datasource":{"type":"prometheus","uid":"prometheus"},"gridPos":{"x":0,"y":8,"w":12,"h":8},"targets":[{"expr":"sum(rate(litellm_requests_failed_total[1m]))","refId":"A","legendFormat":"failed"}]},
+    {"id":4,"type":"timeseries","title":"Latency p50/p95/p99 (s)","datasource":{"type":"prometheus","uid":"prometheus"},"gridPos":{"x":12,"y":8,"w":12,"h":8},"targets":[{"expr":"histogram_quantile(0.5, sum by (le) (rate(litellm_request_total_latency_seconds_bucket[5m])))","refId":"A","legendFormat":"p50"},{"expr":"histogram_quantile(0.95, sum by (le) (rate(litellm_request_total_latency_seconds_bucket[5m])))","refId":"B","legendFormat":"p95"},{"expr":"histogram_quantile(0.99, sum by (le) (rate(litellm_request_total_latency_seconds_bucket[5m])))","refId":"C","legendFormat":"p99"}]},
+    {"id":5,"type":"timeseries","title":"Active keys","datasource":{"type":"prometheus","uid":"prometheus"},"gridPos":{"x":0,"y":16,"w":24,"h":6},"targets":[{"expr":"litellm_team_max_budget","refId":"A","legendFormat":"budget"},{"expr":"litellm_user_max_budget","refId":"B","legendFormat":"user_budget"}]}
+  ]
+}

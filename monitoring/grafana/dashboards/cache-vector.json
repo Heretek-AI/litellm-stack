@@ -1,0 +1,15 @@
+{
+  "title": "litellm-stack / Cache & Vector Store",
+  "uid": "litellm-cache-vector",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": {"from": "now-1h", "to": "now"},
+  "panels": [
+    {"id":1,"type":"timeseries","title":"Redis memory used","datasource":{"type":"prometheus","uid":"prometheus"},"gridPos":{"x":0,"y":0,"w":12,"h":8},"targets":[{"expr":"redis_memory_used_bytes","refId":"A","legendFormat":"used"}]},
+    {"id":2,"type":"timeseries","title":"Redis keys","datasource":{"type":"prometheus","uid":"prometheus"},"gridPos":{"x":12,"y":0,"w":12,"h":8},"targets":[{"expr":"redis_db_keys{db=\"db0\"}","refId":"A","legendFormat":"db0"}]},
+    {"id":3,"type":"timeseries","title":"Cache hit rate","datasource":{"type":"prometheus","uid":"prometheus"},"gridPos":{"x":0,"y":8,"w":12,"h":8},"targets":[{"expr":"sum(rate(litellm_cache_hits_total[5m])) / clamp_min(sum(rate(litellm_cache_lookups_total[5m])), 1)","refId":"A","legendFormat":"hit_rate"}]},
+    {"id":4,"type":"timeseries","title":"Cache hits / lookups","datasource":{"type":"prometheus","uid":"prometheus"},"gridPos":{"x":12,"y":8,"w":12,"h":8},"targets":[{"expr":"sum(rate(litellm_cache_hits_total[1m]))","refId":"A","legendFormat":"hits"},{"expr":"sum(rate(litellm_cache_lookups_total[1m]))","refId":"B","legendFormat":"lookups"}]},
+    {"id":5,"type":"timeseries","title":"Milvus latency (proxy)","datasource":{"type":"prometheus","uid":"prometheus"},"gridPos":{"x":0,"y":16,"w":24,"h":8},"targets":[{"expr":"histogram_quantile(0.95, sum by (le) (rate(milvus_proxy_sq_latency_bucket[5m])))","refId":"A","legendFormat":"p95"}]}
+  ]
+}

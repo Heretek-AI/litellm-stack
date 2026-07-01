@@ -1,0 +1,16 @@
+{
+  "title": "litellm-stack / Unified Overview",
+  "uid": "litellm-unified",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": {"from": "now-1h", "to": "now"},
+  "panels": [
+    {"id":1,"type":"stat","title":"Litellm up","datasource":{"type":"prometheus","uid":"prometheus"},"gridPos":{"x":0,"y":0,"w":4,"h":4},"targets":[{"expr":"up{job=\"litellm\"}","refId":"A"}],"options":{"colorMode":"background","graphMode":"none"}},
+    {"id":2,"type":"stat","title":"Redis up","datasource":{"type":"prometheus","uid":"prometheus"},"gridPos":{"x":4,"y":0,"w":4,"h":4},"targets":[{"expr":"up{job=\"redis\"}","refId":"A"}],"options":{"colorMode":"background","graphMode":"none"}},
+    {"id":3,"type":"stat","title":"Milvus up","datasource":{"type":"prometheus","uid":"prometheus"},"gridPos":{"x":8,"y":0,"w":4,"h":4},"targets":[{"expr":"up{job=\"milvus\"}","refId":"A"}],"options":{"colorMode":"background","graphMode":"none"}},
+    {"id":4,"type":"stat","title":"Postgres up","datasource":{"type":"prometheus","uid":"prometheus"},"gridPos":{"x":12,"y":0,"w":4,"h":4},"targets":[{"expr":"up{job=\"postgres\"}","refId":"A"}],"options":{"colorMode":"background","graphMode":"none"}},
+    {"id":5,"type":"stat","title":"MinIO up","datasource":{"type":"prometheus","uid":"prometheus"},"gridPos":{"x":16,"y":0,"w":4,"h":4},"targets":[{"expr":"up{job=\"minio\"}","refId":"A"}],"options":{"colorMode":"background","graphMode":"none"}},
+    {"id":6,"type":"stat","title":"etcd up","datasource":{"type":"prometheus","uid":"prometheus"},"gridPos":{"x":20,"y":0,"w":4,"h":4},"targets":[{"expr":"up{job=\"etcd\"}","refId":"A"}],"options":{"colorMode":"background","graphMode":"none"}}
+  ]
+}
