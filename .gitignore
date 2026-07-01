@@ -9,3 +9,6 @@ docker-compose.override.yml
 
 # local artifacts
 mitm_*.db
+
+# internal task-progress ledger (subagent-driven-development harness)
+.superpowers/
