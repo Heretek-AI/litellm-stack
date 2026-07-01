@@ -12,3 +12,6 @@ mitm_*.db
 
 # internal task-progress ledger (subagent-driven-development harness)
 .superpowers/
+
+# monitoring secrets (created at compose up time)
+monitoring/secrets/
