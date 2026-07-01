@@ -4,8 +4,9 @@ Local Docker Compose stack wiring [LiteLLM](https://docs.litellm.ai/) to a lemon
 
 ## Layout
 
-- `docker-compose.yml` — five services on the `litellm-net` bridge: `litellm`, `redis`, `etcd`, `minio`, `milvus`.
+- `docker-compose.yml` — eleven services on the `litellm-net` bridge: `litellm`, `redis`, `etcd`, `minio`, `milvus`, `db`, `prometheus`, `alertmanager`, `grafana`, `redis-exporter`, `postgres-exporter`.
 - `config/config.yaml` — proxy config: embedding model + Redis Semantic cache + Milvus vector store.
+- `monitoring/` — Prometheus scrape config + rules, Grafana provisioning + dashboards, Alertmanager config, secret files.
 - `.env` — secrets (gitignored); copy from `.env.example`.
 - `data/` — runtime volume mount root.
 
@@ -18,7 +19,18 @@ docker compose up -d
 docker compose ps
 ```
 
-Wait until `litellm-proxy` shows `healthy` (~30–60s the first time, while Milvus initialises).
+Wait until `litellm-proxy` shows `healthy` (~30–60s the first time, while Milvus initialises). The monitoring stack (prometheus, alertmanager, grafana, exporters) comes up alongside the core stack.
+
+## Monitoring
+
+- **Grafana:** `http://127.0.0.1:3030` (loopback only). Login: `admin` + the password from `monitoring/secrets/grafana_admin_password` (mode 600, owned by the host uid so the container can read it). 3 dashboards are auto-provisioned under the `litellm-stack` folder.
+- **Prometheus:** internal only (`:9090` on the `litellm-net` bridge). 6/7 scrape targets are UP after startup; `minio` is intentionally DOWN — see [Known limitations](#known-limitations) below.
+- **Alertmanager:** internal only (`:9093` on the `litellm-net` bridge). Fires the 3 starter alerts to stdout.
+
+## Known limitations
+
+- **MinIO scrape is DOWN.** The MinIO cluster metrics endpoint requires AWS Signature v4, which Prometheus's `basic_auth` scrape config does not produce. The `minio` job stays at `up=0`. Resolutions (sidecar minio-exporter or drop the job) are deferred to a follow-on spec. Other 6/7 targets (litellm, redis, milvus, postgres, etcd, prometheus) come up cleanly.
+- **`LITELLM_METRICS_TOKEN` must equal `LITELLM_MASTER_KEY`.** LiteLLM's `/metrics` endpoint validates the same bearer token as the rest of the API. The Prometheus `litellm` job uses `bearer_token_file` against `monitoring/secrets/litellm_metrics_token` (mode 644, gitignored) — keep it in sync with `LITELLM_MASTER_KEY` in `.env`.
 
 ## Smoke tests
 

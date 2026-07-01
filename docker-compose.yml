@@ -124,6 +124,11 @@ services:
   prometheus:
     image: prom/prometheus:latest
     container_name: litellm-prometheus
+    # No `user:` directive — runs as the image's default root so it can
+    # write the TSDB at /prometheus (the named volume was originally
+    # provisioned root-owned and cannot be chown'd without privileged
+    # access). Secret files are mode 644 so the container can read them
+    # without needing to match uid/gid.
     command:
       - "--config.file=/etc/prometheus/prometheus.yml"
       - "--storage.tsdb.path=/prometheus"
@@ -154,6 +159,7 @@ services:
       - "--storage.path=/alertmanager"
     volumes:
       - ./monitoring/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro,z
+      - alertmanager_data:/alertmanager
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:9093/-/healthy"]
       interval: 30s
@@ -166,6 +172,15 @@ services:
   grafana:
     image: grafana/grafana:latest
     container_name: litellm-grafana
+    # No `user:` directive — runs as the image's default UID (472). The
+    # grafana_admin_password secret file is mode 644 (group/world readable)
+    # so the container can read it without privileged chown. Mode 644 is
+    # acceptable here because: (1) the file lives only on the loopback
+    # filesystem of a single-user dev box, (2) the credential is the
+    # Grafana admin password (loopback-only) and (3) the value rotates by
+    # re-running the openssl command in .env.example. The ideal plan was
+    # mode 600 + chown 472:472, but the unprivileged `docker compose`
+    # invocation cannot chown host bind-mounts.
     # NOTE: Grafana does NOT inherit env_file: .env — that would leak
     # DATABASE_URL (intended for the litellm service) into the Grafana
     # container, causing the image to switch its auth backend from
@@ -203,6 +218,11 @@ services:
     image: oliver006/redis_exporter:latest
     container_name: litellm-redis-exporter
     command: ["--redis.addr=redis://redis:6379"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "-h", "redis", "ping"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
     networks:
       - litellm-net
     restart: unless-stopped
@@ -212,6 +232,11 @@ services:
     container_name: litellm-postgres-exporter
     environment:
       DATA_SOURCE_NAME: "postgresql://llmproxy:dbpassword9090@db:5432/litellm?sslmode=disable"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h db -p 5432 -U llmproxy"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
     networks:
       - litellm-net
     restart: unless-stopped
@@ -222,6 +247,7 @@ volumes:
   minio_data:
   postgres_data:
   prometheus_data:
+  alertmanager_data:
   grafana_data:
 
 networks:

@@ -82,8 +82,12 @@ alerting:
 scrape_configs:
   - job_name: litellm
     metrics_path: /metrics
+    bearer_token_file: /run/secrets/litellm_metrics_token
     static_configs:
       - targets: ["litellm:4000"]
+    # NOTE: litellm's /metrics endpoint validates the same bearer token as
+    # the rest of the API (LITELLM_MASTER_KEY). The token file here MUST
+    # contain the same value as LITELLM_MASTER_KEY in .env.
 
   - job_name: redis
     static_configs:
@@ -274,11 +278,7 @@ As a result, the `minio` scrape job returns HTTP 400 (Invalid Request) on every
 scrape and `up{job="minio"}` stays at 0 — even though the target itself is
 reachable.
 
-**Current state.** With `telemetry: True` enabled on litellm, all other targets
-come up cleanly and Prometheus reports **6/7 targets UP** (litellm, redis,
-milvus, postgres, etcd, prometheus). The `minio` job is left in the scrape
-config but is not expected to come UP until one of the resolutions below is
-implemented in a follow-on spec.
+**Current state.** With `success_callback: ["prometheus"]` set in `litellm_settings`, the `/metrics` endpoint is exposed (authenticated with the same bearer token as `LITELLM_MASTER_KEY`). All other targets come up cleanly and Prometheus reports **6/7 targets UP** (litellm, redis, milvus, postgres, etcd, prometheus). The `minio` job is left in the scrape config but is not expected to come UP until one of the resolutions below is implemented in a follow-on spec.
 
 **Two viable resolutions (for a follow-on spec):**
 
