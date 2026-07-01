@@ -75,6 +75,24 @@ services:
       - litellm-net
     restart: unless-stopped
 
+  db:
+    image: postgres:16
+    restart: always
+    container_name: litellm-db
+    environment:
+      POSTGRES_DB: litellm
+      POSTGRES_USER: llmproxy
+      POSTGRES_PASSWORD: dbpassword9090
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -d litellm -U llmproxy"]
+      interval: 1s
+      timeout: 5s
+      retries: 10
+    networks:
+      - litellm-net
+
   litellm:
     image: ghcr.io/berriai/litellm:latest
     container_name: litellm-proxy
@@ -97,6 +115,8 @@ services:
         condition: service_healthy
       milvus:
         condition: service_healthy
+      db:
+        condition: service_healthy
     networks:
       - litellm-net
     restart: unless-stopped
@@ -105,6 +125,7 @@ volumes:
   redis_data:
   milvus_data:
   minio_data:
+  postgres_data:
 
 networks:
   litellm-net:
