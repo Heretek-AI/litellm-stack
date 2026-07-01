@@ -85,11 +85,13 @@ services:
       - ./config:/app/config:ro,z
     ports:
       - "127.0.0.1:4000:4000"
+    # lemonade server lives on a separate LAN host. Map host.docker.internal
+    # to the lemonade host IP. Override LEMONADE_HOST_IP in .env (or pass it
+    # here) to point at a different LAN host. The :192.168.31.246 default
+    # matches the Fedora dev box; on hosts where docker0 is UP, host-gateway
+    # also works but is less portable.
     extra_hosts:
-      # lemonade server lives on a separate LAN host (not this Fedora host).
-      # Map host.docker.internal directly to the lemonade IP so the proxy
-      # container reaches it without going through this host.
-      - "host.docker.internal:192.168.31.246"
+      - "host.docker.internal:${LEMONADE_HOST_IP:-192.168.31.246}"
     depends_on:
       redis:
         condition: service_healthy
