@@ -124,6 +124,14 @@ general_settings:
 
 **Note on prior Redis failure.** The `embedding_model` + `api_base` block under `cache_params` is the most commonly missed piece. Without it, Redis Semantic cannot compute query vectors and silently disables caching. With it pointing at lemonade via `host.docker.internal`, cache will hit.
 
+**Note on LiteLLM config-schema gotchas** (validated against the working stack, not just the docs):
+- Embedding model lives in `model_list:` — `embedding_models:` is not a top-level key in current LiteLLM. The model entry in `model_list` doubles as the embed source for `redis_semantic_cache_embedding_model` and Milvus.
+- `cache_params.embedding_model` collides with `Cache(**cache_params)`'s leading `embedding_model` kwarg, producing `TypeError: got multiple values for keyword argument 'embedding_model'`. Use `cache_params.redis_semantic_cache_embedding_model` (upstream-supported key).
+- Cache's eager embed probe runs **before** the router is built, so per-deployment credentials aren't available yet. Supply `litellm_settings.api_base` + `api_key` so the probe can authenticate against lemonade.
+- The `litellm` Docker image's entrypoint already invokes `litellm "$@"`. Compose's `command:` should pass argv only (e.g. `["--config", "/app/config/config.yaml", "--port", "4000", "--detailed_debug"]`), NOT `["litellm", "--config", ...]` — the leading `litellm` causes `Unknown command: litellm`.
+- The openai-compat client needs `OPENAI_API_KEY` + `OPENAI_API_BASE` in the environment even though per-deployment `api_key` is set — they back the eager probe before router resolution.
+- On Fedora (and any host with `linkdown` docker0 bridge), `extra_hosts: host.docker.internal:host-gateway` resolves to an unreachable IP. Hardcode the lemonade host IP for portability on Fedora; use `host-gateway` on hosts where docker0 is up.
+
 ---
 
 ## 6. .env / .env.example
@@ -142,6 +150,11 @@ CACHE_TTL=600
 
 MINIO_ROOT_USER=minioadmin
 MINIO_ROOT_PASSWORD=minioadmin       # local-only; rotate if exposed
+
+# OpenAI-compatible client creds (used by litellm's eager cache embed probe;
+# lemonade ignores the key but the openai-compat client requires it set).
+OPENAI_API_KEY=dummy-not-used
+OPENAI_API_BASE=http://host.docker.internal:13305/v1
 ```
 
 `.env.example` ships with the same keys, placeholder values, and a comment block instructing users to copy and fill.
@@ -151,7 +164,8 @@ MINIO_ROOT_PASSWORD=minioadmin       # local-only; rotate if exposed
 ## 7. Networking
 
 - Bridge network `litellm-net`. All five services attached.
-- `litellm` `extra_hosts: ["host.docker.internal:host-gateway"]` so the container resolves the LAN address of lemonade at `192.168.31.246:13305`.
+- `litellm` `extra_hosts: ["host.docker.internal:host-gateway"]` so the container resolves the LAN address of lemonade at `192.168.31.246:13305`. **On hosts where the docker0 bridge is `linkdown` (Fedora 45 confirmed), `host-gateway` resolves to an unreachable IP — hardcode the lemonade host IP instead.** A portability note is captured in §5 "Note on LiteLLM config-schema gotchas".
+- Bind mounts on Fedora SELinux Enforcing mode need `:z` relabel so nonroot containers can read them (e.g. `./config:/app/config:ro,z`). Without `:z`, litellm logs `Config file not found` even though the file exists at the path.
 - Redis and Milvus are reachable by service name from `litellm` — no host port mapping needed.
 - Host port binding is `127.0.0.1:4000:4000` (loopback only). Remove `127.0.0.1` if exposing on the LAN.
 
