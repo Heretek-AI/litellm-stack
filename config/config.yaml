@@ -1,26 +1,27 @@
 # Chat models — empty until lemonade exposes /v1/chat/completions.
-model_list: []
-
-# Embedding model — referenced by Redis Semantic cache + Milvus vector store.
-embedding_models:
+model_list:
+  # Embedding model — referenced by Redis Semantic cache + Milvus vector store.
   - model_name: harrier-oss-v1-0.6b
     litellm_params:
       model: openai/harrier-oss-v1-0.6b
       api_base: http://host.docker.internal:13305/v1
       api_key: dummy-not-used
-    cache: true
 
 # Redis Semantic cache — uses the embed model above to compare query vectors.
 litellm_settings:
   cache: true
+  # Cache embedding probe runs during config load (before router is built),
+  # so provide litellm-level api_base/api_key rather than relying on router
+  # resolution. Model is fully provider-prefixed.
+  api_base: http://host.docker.internal:13305/v1
+  api_key: dummy-not-used
   cache_params:
     type: redis-semantic
     redis_url: redis://redis:6379
     similarity_threshold: 0.8
     ttl: 600
-    embedding_model: openai/harrier-oss-v1-0.6b
-    api_base: http://host.docker.internal:13305/v1
-    api_key: dummy-not-used
+    redis_semantic_cache_embedding_model: openai/harrier-oss-v1-0.6b
+    redis_semantic_cache_index_name: litellm_semantic_cache
 
 # Milvus — RAG vector store. Collection auto-created on first write.
 vector_stores:
