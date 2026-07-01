@@ -1,0 +1,10 @@
+# secrets
+.env
+
+# runtime
+data/
+*.log
+docker-compose.override.yml
+
+# local artifacts
+mitm_*.db
