@@ -1,0 +1,106 @@
+services:
+  redis:
+    image: redis:latest
+    container_name: litellm-redis
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      - litellm-net
+    restart: unless-stopped
+
+  etcd:
+    image: quay.io/coreos/etcd:v3.5.5
+    container_name: litellm-etcd
+    command:
+      - "etcd"
+      - "-advertise-client-urls=http://etcd:2379"
+      - "-listen-client-urls=http://0.0.0.0:2379"
+      - "--data-dir=/etcd"
+    healthcheck:
+      test: ["CMD", "etcdctl", "endpoint", "health"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      - litellm-net
+    restart: unless-stopped
+
+  minio:
+    image: minio/minio:latest
+    container_name: litellm-minio
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    command: ["minio", "server", "/data", "--address", ":9000", "--console-address", ":9001"]
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:9000/minio/health/live"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      - litellm-net
+    restart: unless-stopped
+
+  milvus:
+    image: milvusdb/milvus:v2.4.10
+    container_name: litellm-milvus
+    command: ["milvus", "run", "standalone"]
+    environment:
+      ETCD_ENDPOINTS: etcd:2379
+      MINIO_ADDRESS: minio:9000
+      MINIO_ACCESS_KEY_ID: ${MINIO_ROOT_USER}
+      MINIO_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD}
+    depends_on:
+      etcd:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    volumes:
+      - milvus_data:/var/lib/milvus
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:9091/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    networks:
+      - litellm-net
+    restart: unless-stopped
+
+  litellm:
+    image: ghcr.io/berriai/litellm:latest
+    container_name: litellm-proxy
+    env_file:
+      - .env
+    command: ["litellm", "--config", "/app/config/config.yaml", "--port", "4000", "--detailed_debug"]
+    volumes:
+      - ./config:/app/config:ro
+    ports:
+      - "127.0.0.1:4000:4000"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      redis:
+        condition: service_healthy
+      milvus:
+        condition: service_healthy
+    networks:
+      - litellm-net
+    restart: unless-stopped
+
+volumes:
+  redis_data:
+  milvus_data:
+  minio_data:
+
+networks:
+  litellm-net:
+    driver: bridge
