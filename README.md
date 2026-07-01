@@ -45,7 +45,11 @@ docker compose exec redis redis-cli KEYS 'litellm_semantic_cache:*' | head
 open http://127.0.0.1:4000/ui   # master_key as password
 
 # 5. Milvus reachable from litellm container
-docker compose exec litellm curl -sf http://milvus:19530/health
+# Note: Milvus v2.4 serves gRPC on 19530; its HTTP frontend returns 404 for
+# /health-style paths, so a curl probe will see 404 even when Milvus is fully
+# reachable. Verify reachability via TCP and the proxy's ability to talk to it:
+docker compose exec litellm python3 -c "import socket; s=socket.create_connection(('milvus',19530),timeout=5); s.close(); print('milvus:19530 reachable')"
+# Or check `docker compose logs milvus --tail 50` for [GIN] entries from the litellm container IP.
 ```
 
 ## Tearing down
