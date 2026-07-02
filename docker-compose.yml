@@ -268,6 +268,16 @@ services:
       - litellm-net
     restart: unless-stopped
 
+  attu:
+    container_name: milvus-attu
+    image: zilliz/attu:latest
+    ports:
+      - "3030:3000"
+    environment:
+      - MILVUS_ADDRESS=litellm-milvus:19530
+    depends_on:
+      - "litellm-milvus"
+
 volumes:
   redis_data:
   milvus_data:
