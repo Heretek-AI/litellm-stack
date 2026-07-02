@@ -70,5 +70,37 @@ if [[ $RESET -eq 1 ]]; then
   fi
 fi
 
-# ── Placeholder for env generation (filled by Task 3) ───────────────
-echo "[ok] clean-slate enforced; next task adds env generation."
+# ── Env file generation ─────────────────────────────────────────────
+if [[ $DRY_RUN -eq 1 ]]; then
+  echo "[dry-run] would copy .env.example -> .env"
+  echo "[dry-run] would regenerate LITELLM_MASTER_KEY (openssl rand -hex 32)"
+  echo "[dry-run] would regenerate GRAFANA_ADMIN_PASSWORD (openssl rand -hex 16)"
+  echo "[dry-run] would write secret files: monitoring/secrets/{litellm_master_key,grafana_admin_password,minio_metrics_user,minio_metrics_pass}"
+  echo "[dry-run] would chmod 644 all 4 secret files"
+else
+  cp .env.example .env
+
+  new_key=$(openssl rand -hex 32)
+  sed -i "s|^LITELLM_MASTER_KEY=.*|LITELLM_MASTER_KEY=${new_key}|" .env
+
+  new_gf=$(openssl rand -hex 16)
+  sed -i "s|^GRAFANA_ADMIN_PASSWORD=.*|GRAFANA_ADMIN_PASSWORD=${new_gf}|" .env
+
+  # Pull final values (in case the user customized them) and mirror to secret files.
+  final_key=$(grep '^LITELLM_MASTER_KEY=' .env | cut -d= -f2-)
+  final_gf=$(grep '^GRAFANA_ADMIN_PASSWORD=' .env | cut -d= -f2-)
+  final_minio_user=$(grep '^MINIO_METRICS_USER=' .env | cut -d= -f2-)
+  final_minio_pass=$(grep '^MINIO_METRICS_PASS=' .env | cut -d= -f2-)
+
+  mkdir -p monitoring/secrets
+  printf '%s' "$final_key"       > monitoring/secrets/litellm_master_key
+  printf '%s' "$final_gf"        > monitoring/secrets/grafana_admin_password
+  printf '%s' "$final_minio_user" > monitoring/secrets/minio_metrics_user
+  printf '%s' "$final_minio_pass" > monitoring/secrets/minio_metrics_pass
+  chmod 644 monitoring/secrets/litellm_master_key \
+           monitoring/secrets/grafana_admin_password \
+           monitoring/secrets/minio_metrics_user \
+           monitoring/secrets/minio_metrics_pass
+
+  echo "[ok] .env generated; 4 secret files written mode 644."
+fi
