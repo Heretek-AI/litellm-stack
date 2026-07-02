@@ -70,21 +70,24 @@ Script `cd`s to its own parent: `cd "$(dirname "$0")/.."`. From there, `docker-c
 
 ### 4.4 Env file generation
 
-`cp .env.example .env`. Then for each blank-or-placeholder value that should be auto-generated, `sed` in the generated value. Specifically:
-- `LITELLM_MASTER_KEY` → `openssl rand -hex 32`
-- `GF_SECURITY_ADMIN_PASSWORD__FILE` mirrors `grafana_admin_password` (set in step 4.5)
-- `MINIO_ROOT_USER` → if blank in `.env.example`, generate a 12-char random string
-- `MINIO_ROOT_PASSWORD` → if blank, `openssl rand -hex 24`
+`cp .env.example .env`. Then for each placeholder value, `sed -i` it to the generated value. Placeholders detected by exact match against the following known strings (verified against `.env.example`):
+- `LITELLM_MASTER_KEY` placeholder `sk-local-CHANGEME-32-bytes-hex` → `openssl rand -hex 32`
+- `GRAFANA_ADMIN_PASSWORD` placeholder `changeme-32-bytes-hex` → `openssl rand -hex 16` (the same value is also written to the secret file in step 4.5)
+- `MINIO_METRICS_USER` placeholder `minioadmin` (default) → if not changed by user, leave as-is; if placeholder detected (`changeme` in the schema), generate 12-char random. **For v1: leave both MINIO_METRICS_USER and MINIO_METRICS_PASS at their `.env.example` defaults** — the Prometheus minio scrape no longer uses basic_auth (per `MINIO_PROMETHEUS_AUTH_TYPE=public`), so the values are vestigial. Just mirror them into secret files for parity.
+- `MINIO_ROOT_USER` default `minioadmin` → leave as-is (sane default for dev).
+- `MINIO_ROOT_PASSWORD` default `minioadmin` → leave as-is (sane default for dev; rotating it adds a moving part with no security benefit on a loopback single-user dev box).
 
-Read `.env.example` to confirm which keys are blank and need generation. Do not overwrite user-supplied values.
+User-supplied non-placeholder values are never overwritten.
 
 ### 4.5 Secret files (mirror to `monitoring/secrets/`)
 
 For each of:
-- `LITELLM_MASTER_KEY` → write to `monitoring/secrets/litellm_master_key` mode 644
-- generated Grafana admin password → write to `monitoring/secrets/grafana_admin_password` mode 644
+- `LITELLM_MASTER_KEY` value from `.env` → write to `monitoring/secrets/litellm_master_key` mode 644
+- `GRAFANA_ADMIN_PASSWORD` value from `.env` → write to `monitoring/secrets/grafana_admin_password` mode 644
+- `MINIO_METRICS_USER` value from `.env` → write to `monitoring/secrets/minio_metrics_user` mode 644
+- `MINIO_METRICS_PASS` value from `.env` → write to `monitoring/secrets/minio_metrics_pass` mode 644
 
-These are loopback-only single-user dev secrets; mode 644 is acceptable per existing README rationale. Add a `chmod 644` after write (in case the file pre-existed with different perms).
+These are loopback-only single-user dev secrets; mode 644 is acceptable per existing README rationale. `chmod 644` after each write (in case the file pre-existed with different perms). The minio secret files are vestigial post-`MINIO_PROMETHEUS_AUTH_TYPE=public` fix but are still bind-mounted into the Prometheus container, so they must contain the matching values.
 
 ### 4.6 Compose up
 
