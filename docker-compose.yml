@@ -79,6 +79,19 @@ services:
     networks:
       - litellm-net
     restart: unless-stopped
+    
+  attu:
+    container_name: milvus-attu
+    image: zilliz/attu:latest
+    ports:
+      - "3030:3000"
+    environment:
+      - MILVUS_ADDRESS=milvus:19530
+    depends_on:
+      - "milvus"
+    networks:
+      - litellm-net
+    restart: unless-stopped
 
   db:
     image: postgres:16
@@ -107,7 +120,7 @@ services:
     volumes:
       - ./config:/app/config:ro,z
     ports:
-      - "4000:4000"
+      - "8080:4000"
     # lemonade server lives on a separate LAN host. Map host.docker.internal
     # to the lemonade host IP. Override LEMONADE_HOST_IP in .env (or pass it
     # here) to point at a different LAN host. The :192.168.31.246 default
@@ -267,16 +280,8 @@ services:
     networks:
       - litellm-net
     restart: unless-stopped
+    
 
-  attu:
-    container_name: milvus-attu
-    image: zilliz/attu:latest
-    ports:
-      - "3030:3000"
-    environment:
-      - MILVUS_ADDRESS=litellm-milvus:19530
-    depends_on:
-      - "litellm-milvus"
 
 volumes:
   redis_data:
