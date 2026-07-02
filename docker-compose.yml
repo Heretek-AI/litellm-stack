@@ -109,6 +109,14 @@ services:
     # here) to point at a different LAN host. The :192.168.31.246 default
     # matches the Fedora dev box; on hosts where docker0 is UP, host-gateway
     # also works but is less portable.
+    environment:
+      DATABASE_URL: "postgresql://llmproxy:dbpassword9090@db:5432/litellm"
+      # Optional: route read-only queries (find_*, count, group_by, query_raw/_first)
+      # to a separate reader endpoint, e.g. an Aurora reader. Leave unset for
+      # single-DB deployments. With IAM_TOKEN_DB_AUTH enabled, the reader URL
+      # is auto-refreshed alongside the writer.
+      # DATABASE_URL_READ_REPLICA: "postgresql://llmproxy:dbpassword9090@db-reader:5432/litellm"
+      STORE_MODEL_IN_DB: "True" # allows adding models to proxy via UI
     extra_hosts:
       - "host.docker.internal:${LEMONADE_HOST_IP:-192.168.31.246}"
     healthcheck:
