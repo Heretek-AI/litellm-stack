@@ -104,3 +104,36 @@ else
 
   echo "[ok] .env generated; 4 secret files written mode 644."
 fi
+
+# ── Compose up ──────────────────────────────────────────────────────
+wait_healthy() {
+  local svc="$1" timeout="$2"
+  local start=$SECONDS
+  while (( SECONDS - start < timeout )); do
+    if docker compose ps "$svc" 2>/dev/null | grep -q "(healthy)"; then
+      printf '[wait] %s healthy (%ds)\n' "$svc" "$((SECONDS - start))"
+      return 0
+    fi
+    sleep 2
+  done
+  printf '[fail] %s not healthy in %ds\n' "$svc" "$timeout" >&2
+  docker compose ps >&2 || true
+  docker compose logs --tail 50 "$svc" >&2 || true
+  return 1
+}
+
+if [[ $DRY_RUN -eq 1 ]]; then
+  echo "[dry-run] would run: docker compose up -d"
+  echo "[dry-run] would wait for healthy: litellm, redis, milvus, prometheus, grafana, alertmanager"
+  echo "[dry-run] would exec: scripts/smoke.sh"
+else
+  echo "[up] docker compose up -d"
+  docker compose up -d
+
+  for svc in litellm redis milvus prometheus grafana alertmanager; do
+    wait_healthy "$svc" 120
+  done
+
+  echo "[ok] all services healthy; running smoke."
+  exec "$SCRIPT_DIR/smoke.sh"
+fi

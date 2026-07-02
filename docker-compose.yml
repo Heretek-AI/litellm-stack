@@ -111,6 +111,20 @@ services:
     # also works but is less portable.
     extra_hosts:
       - "host.docker.internal:${LEMONADE_HOST_IP:-192.168.31.246}"
+    healthcheck:
+      # /health/readiness returns 200 only when the proxy + its DB-backed
+      # store are both ready. Probing this from compose gives the
+      # bootstrap script (scripts/up.sh) a real "litellm ready" gate;
+      # the smoke suite (scripts/smoke.sh) hits the same endpoint from
+      # the host loopback in t_proxy_ready.
+      # The ghcr.io/berriai/litellm image is Alpine-based and ships only
+      # busybox + python3 — no curl, no wget. Use python's urllib for
+      # the HTTP probe.
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:4000/health/readiness').read()"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
     depends_on:
       redis:
         condition: service_healthy
