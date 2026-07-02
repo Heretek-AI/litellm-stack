@@ -51,5 +51,22 @@ check_prereqs() {
 }
 check_prereqs
 
-# ── Placeholder for the rest (filled by later tasks) ─────────────────
-echo "[ok] prereqs + flags parsed; next tasks add env, secrets, compose up."
+# ── Clean-slate enforcement ─────────────────────────────────────────
+if [[ -f .env && $RESET -ne 1 ]]; then
+  mtime=$(stat -c '%y' .env 2>/dev/null || stat -f '%Sm' .env 2>/dev/null || echo "unknown")
+  size=$(wc -c < .env 2>/dev/null || echo "?")
+  echo "refusing to overwrite .env (mtime=$mtime, size=$size bytes)" >&2
+  echo "use --reset to wipe and re-bootstrap" >&2
+  exit 1
+fi
+
+# ── --reset: full wipe ──────────────────────────────────────────────
+if [[ $RESET -eq 1 ]]; then
+  echo "[reset] docker compose down -v"
+  if [[ $DRY_RUN -ne 1 ]]; then
+    docker compose down -v
+  fi
+fi
+
+# ── Placeholder for env generation (filled by Task 3) ───────────────
+echo "[ok] clean-slate enforced; next task adds env generation."
