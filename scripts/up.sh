@@ -22,13 +22,15 @@ Usage: up.sh [flag]
 EOF
 }
 
-case "${1:-}" in
-  --reset)  RESET=1 ;;
-  --dry-run) DRY_RUN=1 ;;
-  --help|-h) print_help; exit 0 ;;
-  "")       ;;
-  *)        echo "unknown flag: $1" >&2; print_help >&2; exit 1 ;;
-esac
+for arg in "$@"; do
+  case "$arg" in
+    --reset)  RESET=1 ;;
+    --dry-run) DRY_RUN=1 ;;
+    --help|-h) print_help; exit 0 ;;
+    "")       ;;
+    *)        echo "unknown flag: $arg" >&2; print_help >&2; exit 1 ;;
+  esac
+done
 
 # ── Working dir ──────────────────────────────────────────────────────
 cd "$REPO_ROOT"
