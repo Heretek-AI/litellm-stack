@@ -10,22 +10,9 @@ Local Docker Compose stack wiring [LiteLLM](https://docs.litellm.ai/) to a lemon
 - `.env` — secrets (gitignored); copy from `.env.example`.
 - `data/` — runtime volume mount root.
 
-## Scripts
-
-```bash
-./scripts/up.sh             # first-time bootstrap (refuses if .env exists)
-./scripts/up.sh --reset     # full wipe + re-bootstrap
-./scripts/up.sh --dry-run   # print plan, don't execute
-./scripts/smoke.sh          # re-run the smoke suite anytime
-```
-
-`up.sh` is the happy path for bringing the stack up. It enforces strict clean-slate (refuses to overwrite `.env` unless `--reset` is passed), generates secrets, brings the compose stack up, waits for services to be healthy, and runs the smoke suite at the end. `smoke.sh` is callable independently to re-verify an already-up stack.
-
-See `docs/superpowers/specs/2026-07-01-local-deploy-and-test-design.md` for the full design.
-
 ## Manual fallback
 
-The scripts above handle the happy path. If `scripts/up.sh` is unavailable (e.g. partial clone), the raw `docker compose` commands still work:
+If `scripts/up.sh` is unavailable (e.g. partial clone), the raw `docker compose` commands below still work. See [## Scripts](#scripts) below for the happy path.
 
 ```bash
 cp .env.example .env
@@ -68,10 +55,23 @@ docker compose exec litellm python3 -c "import socket; s=socket.create_connectio
 # Or check `docker compose logs milvus --tail 50` for [GIN] entries from the litellm container IP.
 ```
 
+## Scripts
+
+```bash
+./scripts/up.sh             # first-time bootstrap (refuses if .env exists)
+./scripts/up.sh --reset     # full wipe + re-bootstrap
+./scripts/up.sh --dry-run   # print plan, don't execute
+./scripts/smoke.sh          # re-run the smoke suite anytime
+```
+
+`up.sh` is the happy path for bringing the stack up. It enforces strict clean-slate (refuses to overwrite `.env` unless `--reset` is passed), generates secrets, brings the compose stack up, waits for services to be healthy, and runs the smoke suite at the end. `smoke.sh` is callable independently to re-verify an already-up stack.
+
+See `docs/superpowers/specs/2026-07-01-local-deploy-and-test-design.md` for the full design.
+
 ## Monitoring
 
 - **Grafana:** `http://127.0.0.1:3030` (loopback only). Login: `admin` + the password from `monitoring/secrets/grafana_admin_password` (mode 600, owned by the host uid so the container can read it). 3 dashboards are auto-provisioned under the `litellm-stack` folder.
-- **Prometheus:** internal only (`:9090` on the `litellm-net` bridge). 6/7 scrape targets are UP after startup; `minio` is intentionally DOWN — see [Known limitations](#known-limitations) below.
+- **Prometheus:** internal only (`:9090` on the `litellm-net` bridge). All 7 scrape targets come up cleanly post-startup (`MINIO_PROMETHEUS_AUTH_TYPE=public` makes the minio cluster metrics endpoint publicly readable inside the bridge network — no auth required).
 - **Alertmanager:** internal only (`:9093` on the `litellm-net` bridge). Fires the 3 starter alerts to stdout.
 
 ## Known limitations
