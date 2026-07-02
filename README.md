@@ -10,7 +10,22 @@ Local Docker Compose stack wiring [LiteLLM](https://docs.litellm.ai/) to a lemon
 - `.env` — secrets (gitignored); copy from `.env.example`.
 - `data/` — runtime volume mount root.
 
-## Bring up
+## Scripts
+
+```bash
+./scripts/up.sh             # first-time bootstrap (refuses if .env exists)
+./scripts/up.sh --reset     # full wipe + re-bootstrap
+./scripts/up.sh --dry-run   # print plan, don't execute
+./scripts/smoke.sh          # re-run the smoke suite anytime
+```
+
+`up.sh` is the happy path for bringing the stack up. It enforces strict clean-slate (refuses to overwrite `.env` unless `--reset` is passed), generates secrets, brings the compose stack up, waits for services to be healthy, and runs the smoke suite at the end. `smoke.sh` is callable independently to re-verify an already-up stack.
+
+See `docs/superpowers/specs/2026-07-01-local-deploy-and-test-design.md` for the full design.
+
+## Manual fallback
+
+The scripts above handle the happy path. If `scripts/up.sh` is unavailable (e.g. partial clone), the raw `docker compose` commands still work:
 
 ```bash
 cp .env.example .env
@@ -21,18 +36,7 @@ docker compose ps
 
 Wait until `litellm-proxy` shows `healthy` (~30–60s the first time, while Milvus initialises). The monitoring stack (prometheus, alertmanager, grafana, exporters) comes up alongside the core stack.
 
-## Monitoring
-
-- **Grafana:** `http://127.0.0.1:3030` (loopback only). Login: `admin` + the password from `monitoring/secrets/grafana_admin_password` (mode 600, owned by the host uid so the container can read it). 3 dashboards are auto-provisioned under the `litellm-stack` folder.
-- **Prometheus:** internal only (`:9090` on the `litellm-net` bridge). 6/7 scrape targets are UP after startup; `minio` is intentionally DOWN — see [Known limitations](#known-limitations) below.
-- **Alertmanager:** internal only (`:9093` on the `litellm-net` bridge). Fires the 3 starter alerts to stdout.
-
-## Known limitations
-
-- **MinIO scrape is DOWN.** The MinIO cluster metrics endpoint requires AWS Signature v4, which Prometheus's `basic_auth` scrape config does not produce. The `minio` job stays at `up=0`. Resolutions (sidecar minio-exporter or drop the job) are deferred to a follow-on spec. Other 6/7 targets (litellm, redis, milvus, postgres, etcd, prometheus) come up cleanly.
-- **Litellm `/metrics` is scraped using `LITELLM_MASTER_KEY` as the Bearer token.** The Prometheus `litellm` job reads `monitoring/secrets/litellm_master_key` (mode 644, gitignored), which is the master key mirrored out of `.env`. There is no separate metrics token — keep `LITELLM_MASTER_KEY` in `.env` in sync with the contents of `monitoring/secrets/litellm_master_key`.
-
-## Smoke tests
+### Smoke tests
 
 ```bash
 # 1. Proxy health (no auth)
@@ -63,6 +67,18 @@ open http://127.0.0.1:4000/ui   # master_key as password
 docker compose exec litellm python3 -c "import socket; s=socket.create_connection(('milvus',19530),timeout=5); s.close(); print('milvus:19530 reachable')"
 # Or check `docker compose logs milvus --tail 50` for [GIN] entries from the litellm container IP.
 ```
+
+## Monitoring
+
+- **Grafana:** `http://127.0.0.1:3030` (loopback only). Login: `admin` + the password from `monitoring/secrets/grafana_admin_password` (mode 600, owned by the host uid so the container can read it). 3 dashboards are auto-provisioned under the `litellm-stack` folder.
+- **Prometheus:** internal only (`:9090` on the `litellm-net` bridge). 6/7 scrape targets are UP after startup; `minio` is intentionally DOWN — see [Known limitations](#known-limitations) below.
+- **Alertmanager:** internal only (`:9093` on the `litellm-net` bridge). Fires the 3 starter alerts to stdout.
+
+## Known limitations
+
+- **Litellm `/metrics` is scraped using `LITELLM_MASTER_KEY` as the Bearer token.** The Prometheus `litellm` job reads `monitoring/secrets/litellm_master_key` (mode 644, gitignored), which is the master key mirrored out of `.env`. There is no separate metrics token — keep `LITELLM_MASTER_KEY` in `.env` in sync with the contents of `monitoring/secrets/litellm_master_key`.
+- **Chat completions depend on the lemonade backend.** `harrier-oss-v1-0.6b` is currently embedding-only on the lemonade server at `${LEMONADE_HOST_IP:-192.168.31.246}:13305` — `t_chat_round_trip` and `t_semantic_cache_hit` in the smoke suite will hard-fail until lemonade exposes `/v1/chat/completions` for this model. Embedding tests (`t_embed`, `t_redis_cache_write`) work today.
+- **UI login is browser-only.** `ghcr.io/berriai/litellm:latest` serves a Swagger UI at `/ui` that requires DB-backed auth (Prisma init). Programmatic `POST /ui/login` returns 405; `POST /login` returns 400 with "Not connected to DB" until Prisma is initialized against the configured Postgres. The smoke suite asserts `GET /ui` returns 200/302/307 (UI reachable); bearer-token auth is validated separately by `t_embed`.
 
 ## Tearing down
 
