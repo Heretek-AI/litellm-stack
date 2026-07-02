@@ -73,8 +73,9 @@ t_prometheus_targets_up() {
 # shellcheck disable=SC2329 # invoked dynamically via REQUIRED_TESTS array
 t_alertmanager_health() {
   # v2 status has no top-level .success; cluster.status="ready" is the
-  # real readiness signal. The image lacks curl/sh, so hit it from the
-  # host via its container IP.
+  # real readiness signal. Hit /api/v2/status from the host via the
+  # container's IP (the prom/alertmanager image has wget, but using the
+  # host-curl path keeps this and t_redis_exporter symmetric).
   local ip
   ip=$(docker inspect -f '{{range.NetworkSettings.Networks}}{{.IPAddress}}{{end}}' litellm-alertmanager)
   curl -sf --max-time 5 "http://$ip:9093/api/v2/status" \
