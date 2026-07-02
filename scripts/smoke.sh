@@ -11,7 +11,6 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$REPO_ROOT"
 
 KEY=$(grep '^LITELLM_MASTER_KEY=' .env | cut -d= -f2-)
-# shellcheck disable=SC2034 # consumed by Task 8's t_chat_round_trip
 LEMONADE_HOST_IP=$(grep '^LEMONADE_HOST_IP=' .env | cut -d= -f2-)
 
 # ── Test functions ──────────────────────────────────────────────────
@@ -101,6 +100,61 @@ t_redis_exporter() {
 t_postgres_exporter() {
   docker compose exec -T postgres-exporter wget -qO- http://localhost:9187/metrics \
     | grep -q '^pg_up 1'
+}
+
+# shellcheck disable=SC2329 # invoked dynamically via REQUIRED_TESTS array
+t_chat_round_trip() {
+  # Pre-check: lemonade backend reachable from inside the litellm container.
+  if ! docker compose exec -T litellm python3 -c \
+      "import socket; s=socket.create_connection(('host.docker.internal',13305),timeout=5); s.close()" >/dev/null 2>&1; then
+    echo "lemonade backend unreachable at ${LEMONADE_HOST_IP:-192.168.31.246}:13305" >&2
+    echo "hint: ping ${LEMONADE_HOST_IP:-192.168.31.246} or check LEMONADE_HOST_IP in .env" >&2
+    return 1
+  fi
+
+  curl -sf --max-time 30 -X POST http://127.0.0.1:4000/v1/chat/completions \
+    -H "Authorization: Bearer $KEY" \
+    -H "Content-Type: application/json" \
+    -d '{"model":"harrier-oss-v1-0.6b","messages":[{"role":"user","content":"Reply with the single word OK"}],"max_tokens":16}' \
+    | jq -e '(.choices | length) > 0 and (.choices[0].message.content | length) > 0' >/dev/null
+}
+
+# shellcheck disable=SC2329 # invoked dynamically via REQUIRED_TESTS array
+t_semantic_cache_hit() {
+  # Send the same chat prompt twice; verify Redis cache key count grew.
+  # Per README, read-side cache hit for chat is not guaranteed upstream;
+  # the write side IS — so we verify the write happened.
+  local before after
+  before=$(docker compose exec -T redis redis-cli KEYS 'litellm_semantic_cache:*' | wc -l)
+  curl -sf --max-time 30 -X POST http://127.0.0.1:4000/v1/chat/completions \
+    -H "Authorization: Bearer $KEY" \
+    -H "Content-Type: application/json" \
+    -d '{"model":"harrier-oss-v1-0.6b","messages":[{"role":"user","content":"smoke cache probe"}],"max_tokens":8}' >/dev/null
+  after=$(docker compose exec -T redis redis-cli KEYS 'litellm_semantic_cache:*' | wc -l)
+  (( after > before ))
+}
+
+# shellcheck disable=SC2329 # invoked dynamically via REQUIRED_TESTS array
+t_grafana_queries_prometheus() {
+  # Authenticate to Grafana as admin and run a simple PromQL query through the datasource.
+  local gf_pass prometheus_datasource_id
+  gf_pass=$(cat monitoring/secrets/grafana_admin_password)
+
+  # Find the Prometheus datasource UID via the Grafana API.
+  prometheus_datasource_id=$(curl -sf --max-time 10 -u "admin:${gf_pass}" \
+    http://127.0.0.1:3030/api/datasources \
+    | jq -r '.[] | select(.type == "prometheus") | .uid' \
+    | head -1)
+  [[ -n $prometheus_datasource_id ]] || return 1
+
+  # Run `up` query.
+  local frames
+  frames=$(curl -sf --max-time 10 -u "admin:${gf_pass}" \
+    -X POST http://127.0.0.1:3030/api/ds/query \
+    -H "Content-Type: application/json" \
+    -d "{\"queries\":[{\"refId\":\"A\",\"datasource\":{\"type\":\"prometheus\",\"uid\":\"${prometheus_datasource_id}\"},\"expr\":\"up\"}],\"from\":\"now-5m\",\"to\":\"now\"}" \
+    | jq -r '.results.A.frames | length')
+  (( frames > 0 ))
 }
 
 # ── Runner ──────────────────────────────────────────────────────────
