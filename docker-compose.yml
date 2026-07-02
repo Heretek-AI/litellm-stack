@@ -84,7 +84,7 @@ services:
     container_name: milvus-attu
     image: zilliz/attu:latest
     ports:
-      - "3030:3000"
+      - "3035:3000"
     environment:
       - MILVUS_ADDRESS=milvus:19530
     depends_on:
